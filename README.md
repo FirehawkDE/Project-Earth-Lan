@@ -9,5 +9,7 @@ Klick & Play (Installer): Keine komplizierten Netzwerk-Einstellungen. Ein Skript
 Für wen ist das gedacht?
 
 ​Für Casuals: Du willst nach Feierabend einfach nur mit Freunden ein altes Lieblingsspiel zocken, ohne vorher ein Informatik-Studium für Router-Portfreigaben abschließen zu müssen.
+
+
 ​
 Für Gamer & LAN-Nostalgiker: Du suchst eine performante, stabile und saubere Alternative zu überladener Software – maximale Kontrolle, minimale Latenz.
