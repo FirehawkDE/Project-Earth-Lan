@@ -21,6 +21,7 @@ Kurze Übersicht der Blöcke
 ​Block 2 (RDP / VNC): Blockiert die Ports für Windows Remotedesktop und VNC, damit niemand ungefragt auf Fremdrechner zugreifen kann.
 
 ​Block 3 (Discovery-Lärm): Schirmt ab, was Geräte dauerhaft an Broadcasts/Multicasts schicken (z. B. "Ich bin ein Drucker", "Gibt es Dropbox-Clients?", "Welcher PC heißt X?"). Absolut notwendig für die Netzwerkspeed.
+
 ​Block 4 (Accept): Erlaubt allen normalen Internet- und Spieletraffic, der nicht durch die oberen Filter blockiert wurde.
 
 Was für macOS & Linux speziell drin ist
