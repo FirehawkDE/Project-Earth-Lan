@@ -1,7 +1,15 @@
+
+
 Klick & Play (Installer): 
 
+Habe 2 Version 
+
+Die erste sind PowerShell Skripte die findet ihr unter Codes.
+
+Und einmal die Skripte als .exe kompiliert als 1 Klick Lösung für alle die sich nicht mit PowerShell auseinandersetzen wollen oder können. Findet ihr unter 
+
 Keine komplizierten Netzwerk-
-Einstellungen. Ein Skript für die Installation, eins für die Deinstallation – der Rest läuft im Hintergrund.
+Einstellungen. Einface Skripte für die Installation,Deinstallation, Einloggen und Ausloggen – der Rest läuft im Hintergrund.
 
 ​Sicher & Direkt: Deine Daten fließen direkt von PC zu PC (Peer-to-Peer). Keine Umwege über langsame Drittanbieter-Server.
 
