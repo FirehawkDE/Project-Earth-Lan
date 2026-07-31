@@ -1,0 +1,87 @@
+# Als Administrator ausführen prüfen
+If (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Error "Bitte führen Sie dieses Skript als Administrator aus!"
+    Exit
+}
+
+$NetworkId = "091f0945fc5012f1"
+$DesiredProfileName = "Project Earth LAN"
+$InstallerPath = "$env:TEMP\ZeroTierOne.msi"
+$DownloadUrl = "https://download.zerotier.com/dist/ZeroTier%20One.msi"
+
+Write-Host "1. Lade ZeroTier One herunter..." -ForegroundColor Cyan
+Invoke-WebRequest -Uri $DownloadUrl -OutFile $InstallerPath
+
+Write-Host "2. Installiere ZeroTier One..." -ForegroundColor Cyan
+Start-Process msiexec.exe -ArgumentList "/i `"$InstallerPath`" /qn /norestart" -Wait
+
+# Warten, bis der Dienst und CLI-Befehle bereit sind
+Write-Host "3. Warte auf den ZeroTier-Dienst..." -ForegroundColor Cyan
+$timeout = 30
+$elapsed = 0
+do {
+    Start-Sleep -Seconds 2
+    $elapsed += 2
+    $status = & "C:\Program Files (x86)\ZeroTier\One\zerotier-cli.bat" status 2>&1
+} while ($LASTEXITCODE -ne 0 -and $elapsed -lt $timeout)
+
+Write-Host "4. Verbinde mit dem Netzwerk: $NetworkId..." -ForegroundColor Cyan
+& "C:\Program Files (x86)\ZeroTier\One\zerotier-cli.bat" join $NetworkId
+
+# Warten, bis Windows den virtuellen Adapter anlegt und verbindet
+Write-Host "5. Warte auf die Adapter-Erstellung..." -ForegroundColor Cyan
+$ztAdapter = $null
+$adapterTimeout = 15
+while (-not $ztAdapter -and $adapterTimeout -gt 0) {
+    Start-Sleep -Seconds 1
+    $ztAdapter = Get-NetAdapter | Where-Object { $_.InterfaceDescription -like "*ZeroTier*" -and $_.Status -eq "Up" }
+    $adapterTimeout--
+}
+
+if ($ztAdapter) {
+    Write-Host "6. Konfiguriere Metrik, MTU und Netzwerkname..." -ForegroundColor Cyan
+    foreach ($adapter in $ztAdapter) {
+        # MTU auf 1380 setzen
+        Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -NlMtu 1380 -ErrorAction SilentlyContinue
+        
+        # Metrik auf 1 setzen (IPv4 und IPv6)
+        Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -InterfaceMetric 1 -ErrorAction SilentlyContinue
+
+        # Kurz auf die Erstellung des Netzwerkprofils durch Windows warten
+        Start-Sleep -Seconds 2
+
+        # 1. Namen im Netzwerk- und Freigabecenter direkt anpassen
+        $profile = Get-NetConnectionProfile -InterfaceIndex $adapter.ifIndex -ErrorAction SilentlyContinue
+        if ($profile) {
+            Set-NetConnectionProfile -InterfaceIndex $adapter.ifIndex -Name $DesiredProfileName -ErrorAction SilentlyContinue
+        }
+
+        # 2. Registry-Fix: Fortlaufende "Netzwerk X"-Namen in der Registry überschreiben
+        $profilesPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\Profiles"
+        $unmanagedPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\Signatures\Unmanaged"
+
+        Get-ChildItem $unmanagedPath -ErrorAction SilentlyContinue | ForEach-Object {
+            $profileGuid = (Get-ItemProperty $_.PsPath).ProfileGuid
+            if ($profileGuid) {
+                $targetProfile = "$profilesPath\$profileGuid"
+                if (Test-Path $targetProfile) {
+                    $currentName = (Get-ItemProperty $targetProfile).ProfileName
+                    if ($currentName -like "Netzwerk*" -or $currentName -eq $DesiredProfileName) {
+                        Set-ItemProperty -Path $targetProfile -Name "ProfileName" -Value $DesiredProfileName -Force
+                    }
+                }
+            }
+        }
+        
+        Write-Host "Adapter '$($adapter.Name)' erfolgreich konfiguriert:" -ForegroundColor Green
+        Write-Host "   - MTU: 1380" -ForegroundColor Green
+        Write-Host "   - Metrik: 1" -ForegroundColor Green
+        Write-Host "   - Name im Freigabecenter: $DesiredProfileName" -ForegroundColor Green
+    }
+} else {
+    Write-Warning "Der ZeroTier-Netzwerkadapter wurde im System noch nicht gefunden. Bitte prüfen Sie die Verbindung manuell."
+}
+
+# Aufräumen
+Remove-Item $InstallerPath -ErrorAction SilentlyContinue
+Write-Host "Installation und Konfiguration abgeschlossen!" -ForegroundColor Green
