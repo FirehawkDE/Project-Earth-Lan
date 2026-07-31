@@ -1,108 +1,106 @@
-# Als Administrator ausführen prüfen
-If (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Error "Bitte führen Sie dieses Skript als Administrator aus!"
-    Exit
+# ==========================================
+# 1. Administrator-Rechte prüfen & anfordern
+# ==========================================
+$currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
 }
 
-$NetworkId = "091f0945fc5012f1"
-$NewAdapterName = "Project Earth Lan"
-$InstallerPath = "$env:TEMP\ZeroTierOne.msi"
-$DownloadUrl = "https://download.zerotier.com/dist/ZeroTier%20One.msi"
+# ==========================================
+# 2. Einstellungen & Variablen
+# ==========================================
+$NetworkID = "091f0945fc5012f1"
+$InstallerUrl = "https://download.zerotier.com/dist/ZeroTier%20One.msi"
+$InstallerPath = "$env:TEMP\ZeroTierOneInstaller.msi"
+$DesktopPath = [System.IO.Path]::Combine($env:USERPROFILE, "Desktop")
+$TxtFile = Join-Path $DesktopPath "Project Earth Lan IP.txt"
+$TargetMTU = 2800
 
-Write-Host "1. Lade ZeroTier One herunter..." -ForegroundColor Cyan
-Invoke-WebRequest -Uri $DownloadUrl -OutFile $InstallerPath
+# ==========================================
+# 3. Download & Installation
+# ==========================================
+Write-Host "Lade ZeroTier One herunter..." -ForegroundColor Cyan
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+Invoke-WebRequest -Uri $InstallerUrl -OutFile $InstallerPath
 
-Write-Host "2. Installiere ZeroTier One..." -ForegroundColor Cyan
-Start-Process msiexec.exe -ArgumentList "/i `"$InstallerPath`" /qn /norestart" -Wait
+Write-Host "Installiere ZeroTier One..." -ForegroundColor Cyan
+$installProcess = Start-Process msiexec.exe -ArgumentList "/i `"$InstallerPath`" /qn /norestart" -Wait -PassThru
 
-Write-Host "3. Optimiere Dienst-Starttyp (Verzögerter Autostart)..." -ForegroundColor Cyan
-Set-Service -Name "ZeroTierOneService" -StartupType Automatic
-Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\ZeroTierOneService" -Name "DelayedAutostart" -Value 1
-
-# Erstmaliger Dienst-Start nach Installation
-Restart-Service -Name "ZeroTierOneService" -Force -ErrorAction SilentlyContinue
-
-# Pfad zur CLI ermitteln
-$cliPath = "C:\Program Files (x86)\ZeroTier\One\zerotier-cli.bat"
-if (-not (Test-Path $cliPath)) {
-    $cliPath = "C:\Program Files\ZeroTier\One\zerotier-cli.bat"
+if ($installProcess.ExitCode -ne 0) {
+    Write-Error "Installation fehlgeschlagen."
+    exit
 }
 
-Write-Host "4. Warte auf vollständige Bereitschaft des ZeroTier-Dienstes..." -ForegroundColor Cyan
-$timeout = 45
-$elapsed = 0
-do {
+# PATH-Umgebungsvariable im laufenden Skript aktualisieren
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+# ==========================================
+# 4. Service-Start abwarten & Join ausführen
+# ==========================================
+Write-Host "Warte auf ZeroTier-Dienst..." -ForegroundColor Cyan
+while ((Get-Service -Name "ZeroTierOneService" -ErrorAction SilentlyContinue).Status -ne "Running") {
     Start-Sleep -Seconds 2
-    $elapsed += 2
-    $status = & $cliPath status 2>&1
-} while ($status -like "*waiting*" -and $elapsed -lt $timeout)
+}
 
-Write-Host "5. Verbinde mit dem Netzwerk: $NetworkId..." -ForegroundColor Cyan
-& $cliPath join $NetworkId
+Start-Sleep -Seconds 3
 
-Write-Host "6. Warte auf Adapter-Erstellung und IP-Zuweisung..." -ForegroundColor Cyan
-Start-Sleep -Seconds 8
+Write-Host "Führe Join aus..." -ForegroundColor Cyan
 
-Write-Host "7. Konfiguriere Metrik, MTU und Adapter-Namen..." -ForegroundColor Cyan
-# Suche den Adapter anhand des Treibers / Beschreibung
-$ztAdapter = Get-NetAdapter | Where-Object { $_.InterfaceDescription -like "*ZeroTier*" -or $_.Name -like "*ZeroTier*" }
+# Versuche zuerst den direkten Pfad, falls PATH noch verzögert ist, sonst Standardbefehl
+$cliExe = "$env:ProgramFiles\ZeroTier\One\zerotier-cli.exe"
 
-$assignedIP = "Keine IP zugewiesen (Netzwerk-Freigabe im Controller ausstehend)"
+if (Test-Path $cliExe) {
+    cmd.exe /c "`"$cliExe`" join $NetworkID"
+} else {
+    cmd.exe /c "zerotier-cli join $NetworkID"
+}
 
-if ($ztAdapter) {
-    foreach ($adapter in $ztAdapter) {
-        # MTU auf 1380 setzen
-        Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -NlMtu 1380 -ErrorAction SilentlyContinue
-        
-        # Metrik auf 1 setzen (IPv4 und IPv6)
-        Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -InterfaceMetric 1 -ErrorAction SilentlyContinue
-        
-        # IP-Adresse des Adapters ermitteln
-        $ipObj = Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+# ==========================================
+# 5. IP-Adresse abwarten & in Datei schreiben
+# ==========================================
+Write-Host "Warte auf Zuweisung der IP-Adresse..." -ForegroundColor Cyan
+
+$adapter = $null
+$assignedIP = $null
+$maxRetries = 30
+$retryCount = 0
+
+while ($retryCount -lt $maxRetries) {
+    $adapter = Get-NetAdapter | Where-Object { $_.InterfaceDescription -like "*ZeroTier*" }
+    
+    if ($adapter) {
+        $ipObj = Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | 
+                 Where-Object { $_.IPAddress -notlike "169.254.*" }
+
         if ($ipObj) {
             $assignedIP = $ipObj.IPAddress
+            break
         }
-
-        # Adapter im Netzwerk- und Freigabecenter umbenennen
-        try {
-            Rename-NetAdapter -InputObject $adapter -NewName $NewAdapterName -ErrorAction Stop
-            Write-Host "Adapter erfolgreich umbenannt in: '$NewAdapterName'" -ForegroundColor Green
-        } catch {
-            Write-Warning "Adapter konnte nicht umbenannt werden (evtl. existiert der Name bereits)."
-        }
-        
-        Write-Host "Adapter-Konfiguration abgeschlossen (MTU: 1380, Metrik: 1)." -ForegroundColor Green
     }
-} else {
-    Write-Warning "Der ZeroTier-Netzwerkadapter wurde noch nicht im System registriert."
+    
+    Start-Sleep -Seconds 2
+    $retryCount++
 }
 
-# 8. Textdatei auf dem Desktop erstellen
-$desktopPath = [Environment]::GetFolderPath("Desktop")
-$filePath = Join-Path -Path $desktopPath -ChildPath "Deine Project Earth Lan IP.txt"
+if (-not $assignedIP) {
+    Write-Error "Keine IP-Adresse erhalten."
+    exit
+}
 
-$fileContent = @"
-========================================
-      Project Earth Lan IP-Adresse
-========================================
+# IP auf dem Desktop speichern
+Set-Content -Path $TxtFile -Value $assignedIP -Force
+Write-Host "IP ($assignedIP) gespeichert in '$TxtFile'." -ForegroundColor Green
 
-Ihre ZeroTier IPv4-Adresse lautet:
-$assignedIP
+# ==========================================
+# 6. Adapter-Metrik auf 1 & MTU setzen
+# ==========================================
+Write-Host "Setze Metrik auf 1 und MTU auf $TargetMTU..." -ForegroundColor Cyan
 
-Netzwerk-Name: $NewAdapterName
-Netzwerk-ID:   $NetworkId
-Datum:         $(Get-Date -Format "dd.MM.yyyy HH:mm:ss")
-========================================
-"@
-
-Set-Content -Path $filePath -Value $fileContent -Encoding UTF8
-Write-Host "IP-Adresse wurde auf dem Desktop gespeichert: $filePath" -ForegroundColor Green
-
-# 9. ZeroTier-Dienst am Ende nochmals neu starten
-Write-Host "9. Starte ZeroTierOne-Dienst abschließend neu..." -ForegroundColor Cyan
-Restart-Service -Name "ZeroTierOneService" -Force -ErrorAction SilentlyContinue
+Set-NetIPInterface -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -InterfaceMetric 1
+Set-NetIPInterface -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -NlMtuBytes $TargetMTU
 
 # Aufräumen
-Remove-Item $InstallerPath -ErrorAction SilentlyContinue
-Write-Host "Installation, Umbenennung und Konfiguration erfolgreich abgeschlossen!" -ForegroundColor Green
+Remove-Item -Path $InstallerPath -Force -ErrorAction SilentlyContinue
 
+Write-Host "Vorgang erfolgreich abgeschlossen!" -ForegroundColor Green
