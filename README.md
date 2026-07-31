@@ -6,8 +6,7 @@ Habe 2 Version
 
 Die erste sind PowerShell Skripte die findet ihr unter Codes.
 
-Und einmal die Skripte als .exe kompiliert als 1 Klick Lösung für alle die sich nicht mit PowerShell auseinandersetzen wollen oder können. Findet ihr unter 
-
+Und einmal die Skripte als .exe kompiliert als 1 Klick Lösung für alle die sich nicht mit PowerShell auseinandersetzen wollen oder können. Findet ihr unter Releases.
 Keine komplizierten Netzwerk-
 Einstellungen. Einface Skripte für die Installation,Deinstallation, Einloggen und Ausloggen – der Rest läuft im Hintergrund.
 
