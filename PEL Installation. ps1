@@ -28,18 +28,20 @@ do {
 Write-Host "4. Verbinde mit dem Netzwerk: $NetworkId..." -ForegroundColor Cyan
 & "C:\Program Files (x86)\ZeroTier\One\zerotier-cli.bat" join $NetworkId
 
-# Warten, bis Windows den virtuellen Adapter anlegt und verbindet
+# Warten, bis Windows den virtuellen Adapter für dieses spezifische ZeroTier-Netzwerk anlegt
 Write-Host "5. Warte auf die Adapter-Erstellung..." -ForegroundColor Cyan
 $ztAdapter = $null
 $adapterTimeout = 15
 while (-not $ztAdapter -and $adapterTimeout -gt 0) {
     Start-Sleep -Seconds 1
+    # Präzises Targeting: Nur den Treiber-Adapter von ZeroTier greifen
     $ztAdapter = Get-NetAdapter | Where-Object { $_.InterfaceDescription -like "*ZeroTier*" -and $_.Status -eq "Up" }
     $adapterTimeout--
 }
 
 if ($ztAdapter) {
-    Write-Host "6. Konfiguriere Metrik, MTU und Netzwerkname..." -ForegroundColor Cyan
+    Write-Host "6. Konfiguriere Metrik, MTU und Netzwerkname ausschließlich für Adapter ID $NetworkId..." -ForegroundColor Cyan
+    
     foreach ($adapter in $ztAdapter) {
         # MTU auf 1380 setzen
         Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -NlMtu 1380 -ErrorAction SilentlyContinue
@@ -47,32 +49,23 @@ if ($ztAdapter) {
         # Metrik auf 1 setzen (IPv4 und IPv6)
         Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -InterfaceMetric 1 -ErrorAction SilentlyContinue
 
-        # Kurz auf die Erstellung des Netzwerkprofils durch Windows warten
+        # Kurz warten, bis Windows dem Adapter das Netzwerkprofil zugewiesen hat
         Start-Sleep -Seconds 2
 
-        # 1. Namen im Netzwerk- und Freigabecenter direkt anpassen
+        # Isolation auf EXAKT diese Netzwerkschnittstelle:
         $profile = Get-NetConnectionProfile -InterfaceIndex $adapter.ifIndex -ErrorAction SilentlyContinue
+        
         if ($profile) {
+            # 1. Benennt NUR die Verbindung auf DIESER Schnittstelle um
             Set-NetConnectionProfile -InterfaceIndex $adapter.ifIndex -Name $DesiredProfileName -ErrorAction SilentlyContinue
-        }
-
-        # 2. Registry-Fix: Fortlaufende "Netzwerk X"-Namen in der Registry überschreiben
-        $profilesPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\Profiles"
-        $unmanagedPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\Signatures\Unmanaged"
-
-        Get-ChildItem $unmanagedPath -ErrorAction SilentlyContinue | ForEach-Object {
-            $profileGuid = (Get-ItemProperty $_.PsPath).ProfileGuid
-            if ($profileGuid) {
-                $targetProfile = "$profilesPath\$profileGuid"
-                if (Test-Path $targetProfile) {
-                    $currentName = (Get-ItemProperty $targetProfile).ProfileName
-                    if ($currentName -like "Netzwerk*" -or $currentName -eq $DesiredProfileName) {
-                        Set-ItemProperty -Path $targetProfile -Name "ProfileName" -Value $DesiredProfileName -Force
-                    }
-                }
+            
+            # 2. Ändert gezielt NUR die Registry-GUID dieses einzelnen Netzwerks
+            $regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\Profiles\$($profile.InstanceId)"
+            if (Test-Path $regPath) {
+                Set-ItemProperty -Path $regPath -Name "ProfileName" -Value $DesiredProfileName -Force -ErrorAction SilentlyContinue
             }
         }
-        
+
         Write-Host "Adapter '$($adapter.Name)' erfolgreich konfiguriert:" -ForegroundColor Green
         Write-Host "   - MTU: 1380" -ForegroundColor Green
         Write-Host "   - Metrik: 1" -ForegroundColor Green
