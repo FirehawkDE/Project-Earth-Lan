@@ -4,6 +4,9 @@ If (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     Exit
 }
 
+# Aktuellen Benutzernamen für Rechte-Übernahme ermitteln
+$currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+
 Write-Host "1. Stoppe alle ZeroTier-Dienste und Prozesse..." -ForegroundColor Cyan
 & sc.exe stop "ZeroTierOneService" 2>&1 | Out-Null
 Get-Service -Name "*ZeroTier*" -ErrorAction SilentlyContinue | Stop-Service -Force -ErrorAction SilentlyContinue
@@ -35,7 +38,7 @@ foreach($key in $uninstallKeys) {
     }
 }
 
-# Fallback: Direktes Entfernen über WMI/CIM, falls Registry-Key abweicht
+# Fallback: Direktes Entfernen über CIM, falls Registry-Key abweicht
 if (-not $uninstalled) {
     $wmiApp = Get-CimInstance Win32_Product | Where-Object { $_.Name -like "*ZeroTier*" }
     if ($wmiApp) {
@@ -49,9 +52,9 @@ Get-NetAdapter | Where-Object { $_.InterfaceDescription -like "*ZeroTier*" -or $
     Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.GUID -eq $interfaceGuid } | Remove-CimInstance -ErrorAction SilentlyContinue
 }
 
-Write-Host "4. Starte radikale systemweite Wildcard-Suche nach allen 'ZeroTier*' Verzeichnissen..." -ForegroundColor Cyan
-# Durchsucht C:\ rekursiv nach jeglichen Ordnern, die das Wort ZeroTier im Namen tragen
-$matchedFolders = Get-ChildItem -Path "C:\" -Recurse -Directory -Filter "*ZeroTier*" -ErrorAction SilentlyContinue
+Write-Host "4. Starte radikale systemweite Suche (inkl. versteckter & System-Ordner)..." -ForegroundColor Cyan
+# IMPORTANT: -Force erzwingt das Finden von versteckten (Hidden) und System-Verzeichnissen
+$matchedFolders = Get-ChildItem -Path "C:\" -Recurse -Directory -Filter "*ZeroTier*" -Force -ErrorAction SilentlyContinue
 
 if ($matchedFolders) {
     foreach ($dir in $matchedFolders) {
@@ -59,21 +62,23 @@ if ($matchedFolders) {
         Write-Host "Gefunden & Bereinige: $targetPath" -ForegroundColor Yellow
 
         try {
-            # Schreibschutz / Attribute auf Normal setzen
+            # 1. Entfernt Hidden-, ReadOnly- und System-Attribute von allen enthaltenen Dateien/Ordnern
             Get-ChildItem -Path $targetPath -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
                 $_.Attributes = 'Normal'
             }
+            (Get-Item $targetPath -Force -ErrorAction SilentlyContinue).Attributes = 'Normal'
 
-            # Besitz übernehmen und Vollzugriff für Administratoren erzwingen
-            takeown.exe /f "$targetPath" /r /d o 2>&1 | Out-Null
-            icacls.exe "$targetPath" /grant administrators:F /t /c /q 2>&1 | Out-Null
+            # 2. Besitz explizit auf den AKTUELLEN BENUTZER und die Administratoren übertragen
+            takeown.exe /f "$targetPath" /r /d y 2>&1 | Out-Null
+            icacls.exe "$targetPath" /grant "${currentUser}:(F)" /t /c /q 2>&1 | Out-Null
+            icacls.exe "$targetPath" /grant "Administratoren:(F)" /t /c /q 2>&1 | Out-Null
 
-            # Versuch über .NET-Bibliothek
-            [System.IO.Directory]::Delete($targetPath, $true)
+            # 3. Löschversuch via PowerShell
+            Remove-Item -Path $targetPath -Recurse -Force -ErrorAction Stop
             Write-Host "Erfolgreich gelöscht: $targetPath" -ForegroundColor Green
         } 
         catch {
-            # Fallback über den Robocopy-Leerspiegelungs-Trick
+            # 4. Fallback über Robocopy (löscht selbst hartnäckigste Sperren durch Leerspiegelung)
             try {
                 $emptyDir = New-Item -ItemType Directory -Path "$env:TEMP\EmptyDir_$(Get-Random)" -Force -ErrorAction SilentlyContinue
                 robocopy.exe $emptyDir.FullName $targetPath /MIR /NJH /NJS /NC /NS /NP 2>&1 | Out-Null
