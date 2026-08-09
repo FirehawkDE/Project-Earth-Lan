@@ -6,8 +6,8 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 Add-Type -AssemblyName System.Windows.Forms
 
-$networkId = "091f0945fc5012f1"
-$desiredProfileName = "Project Earth LAN"
+$networkId = "Deine Netzwerk-ID"
+$desiredProfileName = "Online Lan Gaming"
 $metricValue = 1
 $mtuValue = 1380
 
