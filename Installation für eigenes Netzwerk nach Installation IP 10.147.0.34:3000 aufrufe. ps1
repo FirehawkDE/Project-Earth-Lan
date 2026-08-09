@@ -10,7 +10,7 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
 # ==========================================
 # 2. Einstellungen & Variablen
 # ==========================================
-$NetworkID = "Deine Netzwerk-ID"
+$NetworkID = "091f0945fc744570"
 $InstallerUrl = "https://download.zerotier.com/dist/ZeroTier%20One.msi"
 $InstallerPath = "$env:TEMP\ZeroTierOneInstaller.msi"
 $DesktopPath = [System.IO.Path]::Combine($env:USERPROFILE, "Desktop")
