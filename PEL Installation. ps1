@@ -15,7 +15,7 @@ $InstallerUrl = "https://download.zerotier.com/dist/ZeroTier%20One.msi"
 $InstallerPath = "$env:TEMP\ZeroTierOneInstaller.msi"
 $DesktopPath = [System.IO.Path]::Combine($env:USERPROFILE, "Desktop")
 $TxtFile = Join-Path $DesktopPath "Project Earth Lan IP.txt"
-$TargetMTU = 2800
+$TargetMTU = 1380
 
 # ==========================================
 # 3. Download & Installation
