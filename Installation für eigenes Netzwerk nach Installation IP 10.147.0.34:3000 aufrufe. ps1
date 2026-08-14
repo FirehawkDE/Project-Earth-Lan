@@ -1,5 +1,5 @@
 # ==========================================
-# 1. Administrator-Rechte prüfen & anfordern
+# 1. Administrator-Rechte pruefen & anfordern
 # ==========================================
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -36,7 +36,7 @@ if ($installProcess.ExitCode -ne 0) {
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 
 # ==========================================
-# 4. Service-Start abwarten & Join ausführen
+# 4. Service-Start abwarten & Join ausfuehren
 # ==========================================
 Write-Host "Warte auf ZeroTier-Dienst..." -ForegroundColor Cyan
 while ((Get-Service -Name "ZeroTierOneService" -ErrorAction SilentlyContinue).Status -ne "Running") {
@@ -45,9 +45,9 @@ while ((Get-Service -Name "ZeroTierOneService" -ErrorAction SilentlyContinue).St
 
 Start-Sleep -Seconds 3
 
-Write-Host "Führe Join aus..." -ForegroundColor Cyan
+Write-Host "Fuehre Join aus..." -ForegroundColor Cyan
 
-# Versuche zuerst den direkten Pfad, falls PATH noch verzögert ist, sonst Standardbefehl
+# Versuche zuerst den direkten Pfad, falls PATH noch verzoegert ist, sonst Standardbefehl
 $cliExe = "$env:ProgramFiles\ZeroTier\One\zerotier-cli.exe"
 
 if (Test-Path $cliExe) {
@@ -88,19 +88,67 @@ if (-not $assignedIP) {
     exit
 }
 
-# IP auf dem Desktop speichern
-Set-Content -Path $TxtFile -Value $assignedIP -Force
-Write-Host "IP ($assignedIP) gespeichert in '$TxtFile'." -ForegroundColor Green
+# Textdatei mit Anweisungen, IP und Flow Rules erstellen
+$fileContent = @"
+Deine ZeroTier-IP: $assignedIP
+
+==================================================
+EINRICHTUNG & ERSTE SCHRITTE
+==================================================
+1. Oeffne http://10.147.0.34:3000 im Browser.
+2. Klicke dort auf "Los Geht's".
+3. Vergib Name, E-Mail und Passwort. Danach kannst du sofort ein Netzwerk erstellen.
+4. Hinweis: Du kannst deinen Account zusaetzlich mit einer 2-Faktoren-Authentifizierung (2FA) sichern.
+
+==================================================
+FLOW RULES
+(Unter 'Flow Rules' eintragen fuer absolute Sicherheit, keinen unnoetigen Broadcast-Laerm & maximale Performance fuer Gaming)
+==================================================
+
+--------------------------------------------------
+# 1. Windows-Freigaben, NetBIOS & RPC
+drop
+    dport 135
+    or dport 137:139
+    or dport 445
+;
+
+# 2. Fernwartung & Remote Desktop
+drop
+    dport 3389
+    or dport 5900
+;
+
+# 3. Discovery & Broadcast-Laerm
+drop
+    dport 111
+    or dport 548
+    or dport 631
+    or dport 1900
+    or dport 3702
+    or dport 5353
+    or dport 5355
+    or dport 6320
+    or dport 17500
+;
+
+# 4. Alles andere explizit erlauben
+accept;
+--------------------------------------------------
+"@
+
+Set-Content -Path $TxtFile -Value $fileContent -Encoding UTF8 -Force
+Write-Host "Informationen und IP ($assignedIP) gespeichert in '$TxtFile'." -ForegroundColor Green
 
 # ==========================================
-# 6. Adapter-Metrik auf 1 & MTU setzen
+# 6. Adapter-Metrik auf 2 & MTU setzen
 # ==========================================
-Write-Host "Setze Metrik auf 1 und MTU auf $TargetMTU..." -ForegroundColor Cyan
+Write-Host "Setze Metrik auf 2 und MTU auf $TargetMTU..." -ForegroundColor Cyan
 
-Set-NetIPInterface -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -InterfaceMetric 1
+Set-NetIPInterface -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -InterfaceMetric 2
 Set-NetIPInterface -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -NlMtuBytes $TargetMTU
 
-# Aufräumen
+# Aufraeumen
 Remove-Item -Path $InstallerPath -Force -ErrorAction SilentlyContinue
 
 Write-Host "Vorgang erfolgreich abgeschlossen!" -ForegroundColor Green
