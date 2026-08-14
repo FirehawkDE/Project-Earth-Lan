@@ -6,8 +6,8 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 Add-Type -AssemblyName System.Windows.Forms
 
-$networkId = "Deine Netzwerk-ID"
-$desiredProfileName = "Online Lan Gaming"
+# WICHTIG: Hier muss deine echte 16-stellige Netzwerk-ID stehen!
+$networkId = "Trage deine Netzwerk-ID ein"
 $metricValue = 1
 $mtuValue = 1380
 
@@ -17,12 +17,12 @@ try {
 
     if ($LASTEXITCODE -eq 0 -and $result -like "*200 join OK*") {
         
-        # 2. Warten, bis ZeroTier-Interface aktiv ist
+        # 2. Warten, bis das EXAKTE ZeroTier-Interface aktiv ist
         $interface = $null
-        $timeout = 10
+        $timeout = 15
         while (-not $interface -and $timeout -gt 0) {
             Start-Sleep -Seconds 1
-            $interface = Get-NetAdapter | Where-Object { $_.InterfaceDescription -like "*ZeroTier*" -and $_.Status -eq "Up" }
+            $interface = Get-NetAdapter | Where-Object { ($_.InterfaceAlias -match $networkId -or $_.InterfaceDescription -match $networkId) -and $_.Status -eq "Up" }
             $timeout--
         }
 
@@ -31,30 +31,30 @@ try {
             Set-NetIPInterface -InterfaceIndex $interface.ifIndex -InterfaceMetric $metricValue -ErrorAction Stop
             Set-NetIPInterface -InterfaceIndex $interface.ifIndex -NlMtuBytes $mtuValue -ErrorAction Stop
 
-            # 4. Warten auf Netzwerkprofil von Windows (kann kurz dauern)
-            Start-Sleep -Seconds 2
-            
-            # 5. Gezieltes Umbenennen ausschließlich für diesen Adapter
-            $profile = Get-NetConnectionProfile -InterfaceIndex $interface.ifIndex -ErrorAction SilentlyContinue
-            if ($profile) {
-                # Name im Netzwerkprofil aktualisieren
-                Set-NetConnectionProfile -InterfaceIndex $interface.ifIndex -Name $desiredProfileName -ErrorAction SilentlyContinue
-                
-                # Exakte Registry-GUID dieses einen Netzwerks anpassen
-                $regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\Profiles\$($profile.InstanceId)"
-                if (Test-Path $regPath) {
-                    Set-ItemProperty -Path $regPath -Name "ProfileName" -Value $desiredProfileName -Force -ErrorAction SilentlyContinue
-                }
+            # 4. IP-Adresse des Adapters ermitteln und Txt-Datei auf dem Desktop erstellen
+            $ipAddress = (Get-NetIPAddress -InterfaceIndex $interface.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).IPAddress
+
+            if ($ipAddress) {
+                $desktopPath = [Environment]::GetFolderPath("Desktop")
+                $txtFileName = "ZeroTier_$networkName.txt"
+                $txtFilePath = Join-Path $desktopPath $txtFileName
+
+                $fileContent = @"
+Netzwerk-Name: $networkName
+Netzwerk-ID: $networkId
+Adapter-IP: $ipAddress
+"@
+                Set-Content -Path $txtFilePath -Value $fileContent -Encoding UTF8 -Force
             }
 
             [System.Windows.Forms.MessageBox]::Show(
-                "Verbindung hergestellt!`n`nAnzeigename im Freigabecenter: $desiredProfileName`nMetrik: $metricValue`nMTU: $mtuValue", 
+                "Verbindung hergestellt!`n`nNetzwerk: $networkName`nIP-Adresse: $ipAddress`nMetrik: $metricValue`nMTU: $mtuValue", 
                 "ZeroTier - Erfolg", 
                 [System.Windows.Forms.MessageBoxButtons]::OK, 
                 [System.Windows.Forms.MessageBoxIcon]::Information
             )
         } else {
-            [System.Windows.Forms.MessageBox]::Show("ZeroTier Adapter konnte nicht gefunden werden.", "Fehler", "OK", "Warning")
+            [System.Windows.Forms.MessageBox]::Show("Der ZeroTier Adapter für das Netzwerk $networkId konnte nicht gefunden werden.", "Fehler", "OK", "Warning")
         }
     } else {
         [System.Windows.Forms.MessageBox]::Show(
