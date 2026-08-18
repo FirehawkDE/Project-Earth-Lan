@@ -55,3 +55,7 @@ Keine Umwege über langsame Drittanbieter-Server.
 ​Port 2049: Blockiert NFS (Network File System), den Linux-Standard für Dateifreigaben.
 
 ​Port 631: Stoppt CUPS (das Druckersystem von Linux und macOS), damit nicht Hunderte Clients nach Netzwerkdruckern suchen.
+
+https://youtu.be/p41ukySUGts?si=hwT-Xnvb8ZC7t6cv
+
+https://youtu.be/8btgkLx6LQA?si=NpsR9XeDdZXB8_8_
