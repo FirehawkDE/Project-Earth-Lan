@@ -16,11 +16,12 @@
 
 ​🚀 Schnelleinrichtung (In unter 2 Minuten)
 ​Du kannst dein Netzwerk vollkommen kostenlos und ohne Risiko einrichten.
-​Option A: Automatisch über Skript (Empfohlen für Einsteiger)
 
-​Lade die vorbereitete .exe aus unseren Releases herunter.
+​Option A: Automatisch über Skript das Orgamitglied was dir beim Einrichten hilft. (Empfohlen für Einsteiger)
 
-​Starte die Datei als Administrator, um ZeroTier und die richtigen Netzwerkeinstellungen automatisch zu konfigurieren.
+​Lade die vorbereiteten Skripte aus unseren Releases herunter.
+
+​Starte die Datei mit Doppelklick füge deine Netzwerk-ID [Lan Party Ticket] ein, um ZeroTier und die richtigen Netzwerkeinstellungen automatisch von den Orgas zu konfigurieren zu lassen.
 
 ​Option B: Manuell ohne Skripte (Für erfahrene Nutzer)
 
