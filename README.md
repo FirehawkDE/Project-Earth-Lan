@@ -41,3 +41,13 @@ Die LAN-Party-Kultur für Kult-Multiplayer-Spiele (1993–2019) im virtuellen Ra
 
 ​Direkte Verbindung (Peer-to-Peer): Deine Daten fließen direkt von PC zu PC – ohne Umwege über langsame Drittanbieter-Server.
 ​Integrierte Firewall-Regeln: Das ZeroTier-Netzwerk ist durch serverseitige Regeln geschützt. Dateifreigaben (SMB), Windows-Passwörter und Drucker-Dienste werden im Netzwerk automatisch blockiert, sodass deine privaten Daten geschützt bleiben.
+
+
+Erklärung von ZeroTier und Project Earth Lan was genau im Hintergrund passiert.
+https://youtu.be/LceTJkqEbk8?si=0snxmr3iq5rL0jCE
+
+Erklärung der Skripte [Orgamitglieder]
+https://youtu.be/eU3zRcLqq3U?si=1f1jTUyLfPyc72x-
+
+Eigenes Netzwerk:
+https://youtu.be/eU3zRcLqq3U?si=1f1jTUyLfPyc72x-&t=454
