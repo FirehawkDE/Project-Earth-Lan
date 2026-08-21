@@ -33,7 +33,6 @@ if ($installProcess.ExitCode -ne 0) {
     exit
 }
 
-# PATH-Umgebungsvariable im laufenden Skript aktualisieren
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 
 # ==========================================
@@ -49,24 +48,19 @@ Start-Sleep -Seconds 3
 $cliExe = "$env:ProgramFiles\ZeroTier\One\zerotier-cli.exe"
 
 Write-Host "Fuehre Join fuer Netzwerk 1 ($NetworkID1) aus..." -ForegroundColor White
-if (Test-Path $cliExe) {
-    cmd.exe /c "`"$cliExe`" join $NetworkID1"
-    Start-Sleep -Seconds 2
-    Write-Host "Fuehre Join fuer Netzwerk 2 ($NetworkID2) aus..." -ForegroundColor White
-    cmd.exe /c "`"$cliExe`" join $NetworkID2"
-} else {
-    cmd.exe /c "zerotier-cli join $NetworkID1"
-    Start-Sleep -Seconds 2
-    Write-Host "Fuehre Join fuer Netzwerk 2 ($NetworkID2) aus..." -ForegroundColor White
-    cmd.exe /c "zerotier-cli join $NetworkID2"
-}
+if (Test-Path $cliExe) { & "$cliExe" join $NetworkID1 } else { zerotier-cli join $NetworkID1 }
+
+Start-Sleep -Seconds 2
+
+Write-Host "Fuehre Join fuer Netzwerk 2 ($NetworkID2) aus..." -ForegroundColor White
+if (Test-Path $cliExe) { & "$cliExe" join $NetworkID2 } else { zerotier-cli join $NetworkID2 }
 
 # ==========================================
-# 5. IP-Adressen abwarten & extrahieren
+# 5. IP-Adressen abwarten & auslesen
 # ==========================================
 Write-Host "Warte auf Zuweisung der IP-Adressen..." -ForegroundColor White
 
-function Get-ZeroTierIP {
+function Get-ZeroTierNetworkIP {
     param ([string]$NetID)
     
     $maxRetries = 30
@@ -74,29 +68,16 @@ function Get-ZeroTierIP {
     
     while ($retryCount -lt $maxRetries) {
         if (Test-Path $cliExe) {
-            $listNet = & "$cliExe" listnetworks
+            $output = & "$cliExe" listnetworks
         } else {
-            $listNet = zerotier-cli listnetworks
+            $output = zerotier-cli listnetworks
         }
         
-        $matchingLine = $listNet | Where-Object { $_ -match $NetID }
-        if ($matchingLine) {
-            # Extrahiere die IP/CIDR aus der CLI-Ausgabe (Spalte 8)
-            $assignedIP = ($matchingLine -split "\s+")[8]
-            if ($assignedIP -and $assignedIP -ne "-" -and $assignedIP -notlike "169.254.*") {
-                # Nur IPv4 ohne Subnetz-Suffix (/24 etc.) Filtern
-                $cleanIP = $assignedIP.Split('/')[0]
-                if ($cleanIP -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$') {
-                    # Netzwerkkarten-Adapter zuordnen
-                    $adapters = Get-NetAdapter | Where-Object { $_.InterfaceDescription -like "*ZeroTier*" }
-                    foreach ($adapter in $adapters) {
-                        $ipObj = Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | 
-                                 Where-Object { $_.IPAddress -eq $cleanIP }
-                        if ($ipObj) {
-                            return @{ Adapter = $adapter; IP = $cleanIP }
-                        }
-                    }
-                }
+        $line = $output | Where-Object { $_ -match $NetID }
+        if ($line) {
+            # Suche nach einer gültigen IPv4-Adresse im Text der Netzwerkausgabe
+            if ($line -match '(\b(?:[0-9]{1,3}\.){3}[0-9]{1,3})\/\d+') {
+                return $matches[1]
             }
         }
         Start-Sleep -Seconds 2
@@ -105,31 +86,38 @@ function Get-ZeroTierIP {
     return $null
 }
 
-$resNet1 = Get-ZeroTierIP -NetID $NetworkID1
-$resNet2 = Get-ZeroTierIP -NetID $NetworkID2
+$ip1 = Get-ZeroTierNetworkIP -NetID $NetworkID1
+$ip2 = Get-ZeroTierNetworkIP -NetID $NetworkID2
 
-if (-not $resNet1 -or -not $resNet2) {
-    Write-Error "IP-Adresse(n) konnten nicht fuer beide Netzwerke bezogen werden."
+if (-not $ip1 -or -not $ip2) {
+    Write-Error "IP-Adresse(n) konnten nicht rechtzeitig abgerufen werden. Bitte pruefe die Netzwerkkonfiguration."
     exit
 }
 
-$ip2 = $resNet2.IP
-
 # ==========================================
-# 6. Metrik & MTU fuer beide Adapter setzen
+# 6. Netzwerkadapter, Metrik & MTU anpassen
 # ==========================================
 Write-Host "Setze Netzwerk-Optimierungen (Metrik & MTU)..." -ForegroundColor White
 
-Set-NetIPInterface -InterfaceIndex $resNet1.Adapter.InterfaceIndex -AddressFamily IPv4 -InterfaceMetric 2
-Set-NetIPInterface -InterfaceIndex $resNet1.Adapter.InterfaceIndex -AddressFamily IPv4 -NlMtuBytes $TargetMTU
+# Adapter anhand der zugewiesenen IPs finden
+$adapter1 = Get-NetIPAddress -IPAddress $ip1 -ErrorAction SilentlyContinue | Get-NetAdapter
+$adapter2 = Get-NetIPAddress -IPAddress $ip2 -ErrorAction SilentlyContinue | Get-NetAdapter
 
-Set-NetIPInterface -InterfaceIndex $resNet2.Adapter.InterfaceIndex -AddressFamily IPv4 -InterfaceMetric 1
-Set-NetIPInterface -InterfaceIndex $resNet2.Adapter.InterfaceIndex -AddressFamily IPv4 -NlMtuBytes $TargetMTU
+if ($adapter1) {
+    Set-NetIPInterface -InterfaceIndex $adapter1.InterfaceIndex -AddressFamily IPv4 -InterfaceMetric 2
+    Set-NetIPInterface -InterfaceIndex $adapter1.InterfaceIndex -AddressFamily IPv4 -NlMtuBytes $TargetMTU
+}
+
+if ($adapter2) {
+    Set-NetIPInterface -InterfaceIndex $adapter2.InterfaceIndex -AddressFamily IPv4 -InterfaceMetric 1
+    Set-NetIPInterface -InterfaceIndex $adapter2.InterfaceIndex -AddressFamily IPv4 -NlMtuBytes $TargetMTU
+}
 
 # ==========================================
-# 7. Textdatei mit IPv4 von Netzwerk 2 erstellen
+# 7. Textdatei erstellen
 # ==========================================
 $fileContent = @"
+Deine ZeroTier-IP (Netzwerk 1): $ip1
 Project Earth LAN IP: $ip2
 
 ==================================================
@@ -180,7 +168,8 @@ accept;
 Set-Content -Path $TxtFile -Value $fileContent -Encoding UTF8 -Force
 
 Write-Host "Informationen gespeichert in '$TxtFile'." -ForegroundColor White
-Write-Host "Project Earth LAN IP (Netzwerk 2): $ip2" -ForegroundColor White
+Write-Host "IP Netzwerk 1: $ip1" -ForegroundColor White
+Write-Host "Project Earth LAN IP: $ip2" -ForegroundColor White
 
 # Aufraeumen
 Remove-Item -Path $InstallerPath -Force -ErrorAction SilentlyContinue
